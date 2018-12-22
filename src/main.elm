@@ -19,7 +19,7 @@ main =
 
 
 type alias TodoEntry =
-    { id : Int, text : String, done : Bool }
+    { id : Int, text : String, done : Bool, edit : Maybe String }
 
 
 type alias Model =
@@ -29,10 +29,6 @@ type alias Model =
     , currentInput : String
     , currentDeleteID : String
     }
-
-
-
--- Rastet das auch bei dir so aus, wenn ich was tippe, und du woanders bist?
 
 
 init : Model
@@ -50,9 +46,12 @@ type Msg
     | EntryMarkedCompleted Int
     | EntryMarkedNotDone Int
     | DeleteEntry
+    | DeleteEntryById Int
     | DeleteAllEntries
     | GetText String
     | UpdateDeleteIdString String
+    | ApplyEdit Int
+    | UpdateEdit Int String
 
 
 update : Msg -> Model -> Model
@@ -65,7 +64,7 @@ update msg model =
             in
             { model
                 | maxIndex = newIndex
-                , entries = model.entries ++ [ TodoEntry newIndex text False ]
+                , entries = model.entries ++ [ TodoEntry newIndex text False Nothing ]
                 , currentInput = ""
             }
 
@@ -81,13 +80,17 @@ update msg model =
         DeleteAllEntries ->
             { model | entries = [] }
 
+        DeleteEntryById id ->
+            deleteEntry model id
+
         DeleteEntry ->
             case String.toInt model.currentDeleteID of
                 Just id ->
-                    { model
-                        | entries = List.filter (.id >> (/=) id) model.entries
-                        , currentDeleteID = ""
-                    }
+                    let
+                        newModel =
+                            deleteEntry model id
+                    in
+                    { newModel | currentDeleteID = "" }
 
                 Nothing ->
                     { model | currentDeleteID = "" }
@@ -98,6 +101,40 @@ update msg model =
         GetText text ->
             { model | currentInput = text }
 
+        UpdateEdit id text ->
+            let
+                updateEdit entry =
+                    if entry.id == id then
+                        { entry | edit = Just text }
+
+                    else
+                        entry
+            in
+            { model | entries = List.map updateEdit model.entries }
+
+        ApplyEdit id ->
+            let
+                applyEdit entry =
+                    if entry.id == id then
+                        case entry.edit of
+                            Just updateText ->
+                                { entry | text = updateText, edit = Nothing }
+
+                            Nothing ->
+                                { entry | text = "" }
+
+                    else
+                        entry
+            in
+            { model | entries = List.map applyEdit model.entries }
+
+
+deleteEntry : Model -> Int -> Model
+deleteEntry model id =
+    { model
+        | entries = List.filter (.id >> (/=) id) model.entries
+    }
+
 
 
 -- VIEW
@@ -105,8 +142,8 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    div []
-        [ text model.listName
+    div [ style "text-align" "center" ]
+        [ Html.header [] [ text model.listName ]
         , viewInput model.currentInput
         , viewDeleteItem model.currentDeleteID
         , viewEntries model
@@ -124,23 +161,42 @@ as well as when enter is typed in the text input.
 viewInput : String -> Html Msg
 viewInput current =
     Html.form [ onSubmit AddEntryButtonPressed ]
-        [ input [ placeholder "Enter your new input", value current, onInput GetText ] []
+        [ input [ placeholder "Enter your new input", value current, onInput GetText, autofocus True ] []
         , input [ type_ "submit", value "+" ] []
         ]
 
 
-viewEntries : Model -> Html msg
+viewEntries : Model -> Html Msg
 viewEntries model =
     div []
-        (List.map
-            viewEntry
-            model.entries
-        )
+        (List.map viewEntry model.entries)
 
 
-viewEntry : TodoEntry -> Html msg
+viewEntry : TodoEntry -> Html Msg
 viewEntry todoEntry =
-    div [] [ text (String.fromInt todoEntry.id ++ ": "), text todoEntry.text ]
+    case todoEntry.edit of
+        Just editText ->
+            div []
+                [ Html.form [ onSubmit (ApplyEdit todoEntry.id) ]
+                    [ input
+                        [ placeholder "New value"
+                        , value editText
+                        , onInput (UpdateEdit todoEntry.id)
+                        , autofocus True
+                        ]
+                        []
+                    , input [ type_ "submit", value "Save" ] []
+                    ]
+                , button [ onClick (DeleteEntryById todoEntry.id) ] [ text "x" ]
+                ]
+
+        Nothing ->
+            div []
+                [ text (String.fromInt todoEntry.id ++ ": ")
+                , text todoEntry.text
+                , button [ onClick (UpdateEdit todoEntry.id todoEntry.text) ] [ text "Edit" ]
+                , button [ onClick (DeleteEntryById todoEntry.id) ] [ text "x" ]
+                ]
 
 
 viewDeleteItem : String -> Html Msg
